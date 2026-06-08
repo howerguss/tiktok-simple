@@ -1,6 +1,6 @@
 # tiktok-simple — 极简抖音后端
 
-基于 Go + Gin 实现的短视频社交平台后端，覆盖抖音核心功能。
+基于 Go + Gin + GORM 实现的短视频社交平台后端，覆盖抖音核心功能。
 
 ## 技术栈
 
@@ -41,6 +41,18 @@ tiktok-simple/
 └── storage/videos/          # 视频本地存储
 ```
 
+## 配置说明
+
+### 重要注意事项
+- `config/config.yaml` 文件包含数据库密码、JWT密钥等敏感信息。
+- 你需要**手动创建自己的配置文件**，不能直接使用示例文件。
+
+### 快速配置步骤
+1. 在 `config/` 目录下，复制示例配置文件：
+   ```bash
+   cp config/config.yaml.example config/config.yaml
+2. 编辑 config/config.yaml，填入你的真实数据库密码、Redis 密码、JWT 密钥。
+3. 保存后即可正常启动项目。
 
 ## 快速开始
 
@@ -53,7 +65,7 @@ tiktok-simple/
 ### 启动步骤
 
 1. 克隆项目
-   git clone https://github.com/你的用户名/tiktok-simple.git
+   git clone https://github.com/howerguss/tiktok-simple.git
    cd tiktok-simple
 
 2. 创建数据库
