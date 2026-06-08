@@ -33,8 +33,7 @@ tiktok-simple/
 │   └── main.go                      # 程序入口，初始化、路由、优雅关闭
 ├── config/
 │   ├── config.go                    # 配置加载
-│   ├── config.yaml                  # 配置文件（不上传 GitHub）
-│   └── config.yaml.example          # 配置示例（上传 GitHub）
+│   ├── config.yaml                  # 配置文件
 ├── internal/
 │   ├── handler/                     # HTTP 处理层（解析参数、返回响应）
 │   │   ├── user_handler.go
