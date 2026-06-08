@@ -9,95 +9,91 @@ import (
 	"tiktok-simple/config"
 	"tiktok-simple/internal/model"
 	"tiktok-simple/internal/repository"
+	"tiktok-simple/pkg/storage"
 	"tiktok-simple/pkg/util"
 	"time"
 
-	"github.com/google/uuid" // 用来生成唯一文件名，需要安装
+	"github.com/google/uuid"
 )
 
-// PublishVideo 处理视频上传业务
-// userID: 上传者的ID（从JWT token里拿到）
-// title: 视频标题
-// fileHeader: 上传的视频文件
+// PublishVideo 处理视频上传
+// 流程：保存临时文件 → 截取封面 → 上传视频到MinIO → 上传封面到MinIO → 写数据库 → 清理临时文件
 func PublishVideo(userID uint, title string, fileHeader *multipart.FileHeader) error {
-	storagePath := config.Global.Storage.Path
-
-	// 确保存储目录存在
-	// MkdirAll 类似 mkdir -p，目录已存在不会报错
-	if err := os.MkdirAll(storagePath, 0755); err != nil {
-		return fmt.Errorf("创建存储目录失败: %w", err)
+	// 本地临时目录，用于ffmpeg截帧（ffmpeg需要读本地文件）
+	tmpPath := config.Global.Storage.Path
+	if err := os.MkdirAll(tmpPath, 0755); err != nil {
+		return fmt.Errorf("创建临时目录失败: %w", err)
 	}
 
-	// 生成唯一文件名，防止文件名冲突
-	// uuid.New().String() 生成类似 "550e8400-e29b-41d4-a716-446655440000" 的唯一字符串
-	// filepath.Ext 获取原文件扩展名，比如 ".mp4"
+	// 生成唯一文件名
 	videoFileName := uuid.New().String() + filepath.Ext(fileHeader.Filename)
-	videoFilePath := filepath.Join(storagePath, videoFileName)
+	videoTmpPath := filepath.Join(tmpPath, videoFileName) // 本地临时路径
 
-	// TODO: 打开上传的文件
-	// 提示：src, err := fileHeader.Open()
+	// 第一步：把上传的视频保存到本地临时文件
 	src, err := fileHeader.Open()
 	if err != nil {
 		return fmt.Errorf("打开上传文件失败: %w", err)
 	}
-	defer src.Close() // 函数结束时关闭文件，释放资源
+	defer src.Close()
 
-	// TODO: 创建目标文件
-	// 提示：dst, err := os.Create(videoFilePath)
-	dst, err := os.Create(videoFilePath)
+	dst, err := os.Create(videoTmpPath)
 	if err != nil {
-		return fmt.Errorf("创建目标文件失败: %w", err)
+		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
 	defer dst.Close()
 
-	// TODO: 把上传的文件内容复制到目标文件
-	// 提示：用 io.Copy(dst, src) 来复制
-	// 需要在import里加 "io"
 	if _, err = io.Copy(dst, src); err != nil {
-		return fmt.Errorf("保存视频失败: %w", err)
+		return fmt.Errorf("保存临时文件失败: %w", err)
 	}
+	dst.Close() // 必须先关闭再让ffmpeg读取
 
-	// 用ffmpeg截取视频封面
-	// 截取失败不影响上传，封面用空字符串
-	coverFilePath := ""
-	coverFileName := ""
-	cover, err := util.GenerateCover(videoFilePath)
-	if err == nil {
-		coverFilePath = cover
-		coverFileName = filepath.Base(coverFilePath) // Base 取路径最后一段，即文件名
-	}
+	// 函数结束时清理所有临时文件（无论成功还是失败）
+	defer os.Remove(videoTmpPath)
 
-	// 构建访问URL
-	// 这里用相对路径存储，返回给前端时通过接口提供访问
-	// 比如视频文件名是 xxx.mp4，访问URL是 /static/videos/xxx.mp4
-	playURL := "/static/videos/" + videoFileName
+	// 第二步：用ffmpeg截取封面（截本地临时文件）
+	coverTmpPath := ""
 	coverURL := ""
-	if coverFileName != "" {
-		coverURL = "/static/videos/" + coverFileName
+	cover, err := util.GenerateCover(videoTmpPath)
+	if err == nil {
+		coverTmpPath = cover
+		defer os.Remove(coverTmpPath) // 函数结束时清理封面临时文件
 	}
-	_ = coverFilePath // 避免未使用变量报错
 
-	// 写入数据库
+	// 第三步：上传视频到 MinIO
+	// objectName 是文件在MinIO桶里的"路径"，用 videos/ 前缀做分类
+	videoObjectName := "videos/" + videoFileName
+	playURL, err := storage.UploadFile(videoObjectName, videoTmpPath, "video/mp4")
+	if err != nil {
+		return fmt.Errorf("上传视频到MinIO失败: %w", err)
+	}
+
+	// 第四步：上传封面到 MinIO（如果截帧成功了）
+	if coverTmpPath != "" {
+		coverFileName := filepath.Base(coverTmpPath)
+		coverObjectName := "covers/" + coverFileName // 封面用 covers/ 前缀
+		coverURL, _ = storage.UploadFile(coverObjectName, coverTmpPath, "image/jpeg")
+		// 封面上传失败不影响主流程，coverURL 为空字符串
+	}
+
+	// 第五步：写入数据库
 	video := &model.Video{
 		UserID:   userID,
 		Title:    title,
-		PlayURL:  playURL,
-		CoverURL: coverURL,
+		PlayURL:  playURL,  // MinIO的完整URL，比如 http://localhost:9000/tiktok/videos/xxx.mp4
+		CoverURL: coverURL, // MinIO的完整URL
 	}
 	return repository.CreateVideo(video)
 }
 
-// GetFeed 获取Feed流
-// latestTime: 时间戳，返回这个时间之前的视频（实现翻页）
+// GetFeed 获取Feed流（不变）
 func GetFeed(latestTime int64) ([]model.Video, error) {
-	// 如果没传时间戳，默认用当前时间（返回最新的视频）
 	if latestTime == 0 {
 		latestTime = time.Now().Unix()
 	}
-	return repository.GetFeedVideos(latestTime, 10) // 每次返回10条
+	return repository.GetFeedVideos(latestTime, 10)
 }
 
-// GetPublishList 获取用户发布的视频列表
+// GetPublishList 获取用户发布列表（不变）
 func GetPublishList(userID uint) ([]model.Video, error) {
 	return repository.GetVideosByUserID(userID)
 }

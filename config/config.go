@@ -2,17 +2,17 @@ package config
 
 import (
 	"fmt"
-
 	"github.com/spf13/viper"
 )
 
-// Config 是整个项目的配置结构体，对应 config.yaml 的结构
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
 	Storage  StorageConfig
+	Minio    MinioConfig   // 新增
+	MongoDB  MongoDBConfig // 新增
 }
 
 type ServerConfig struct {
@@ -43,21 +43,33 @@ type StorageConfig struct {
 	Path string
 }
 
-// Global 是全局配置对象，项目任何地方都可以用 config.Global.xxx 来读取配置
+// MinioConfig MinIO对象存储配置
+type MinioConfig struct {
+	Endpoint        string `mapstructure:"endpoint"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	BucketName      string `mapstructure:"bucket_name"`
+	UseSSL          bool   `mapstructure:"use_ssl"`
+	BaseURL         string `mapstructure:"base_url"`
+}
+
+// MongoDBConfig MongoDB配置
+type MongoDBConfig struct {
+	URI      string `mapstructure:"uri"`      // 连接字符串，比如 mongodb://localhost:27017
+	Database string `mapstructure:"database"` // 数据库名
+}
+
 var Global *Config
 
 func Init() {
-	// 告诉viper配置文件的名字、格式和位置
-	viper.SetConfigName("config")   // 文件名（不含扩展名）
-	viper.SetConfigType("yaml")     // 文件格式
-	viper.AddConfigPath("./config") // 文件所在目录
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("./config")
 
-	// 读取配置文件
 	if err := viper.ReadInConfig(); err != nil {
 		panic(fmt.Errorf("读取配置文件失败: %w", err))
 	}
 
-	// 把读取到的配置反序列化到 Global 结构体里
 	Global = &Config{}
 	if err := viper.Unmarshal(Global); err != nil {
 		panic(fmt.Errorf("解析配置失败: %w", err))

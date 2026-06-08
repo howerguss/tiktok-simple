@@ -20,3 +20,19 @@ jwt:
 
 storage:
   path: "./storage/videos"
+
+storage:
+  path: "./storage/videos"   # 本地临时目录（上传MinIO前的临时存储）
+
+
+minio:
+  endpoint: "localhost:9000"         # MinIO 服务地址
+  access_key_id: ""        # 访问密钥ID
+  secret_access_key: "" # 访问密钥
+  bucket_name: "tiktok"             # 桶名称
+  use_ssl: false                     # 本地开发不用SSL，生产环境改为true
+  base_url: "http://localhost:9000"  # 文件访问的基础URL
+
+mongodb:
+  uri: ""
+  database: ""
