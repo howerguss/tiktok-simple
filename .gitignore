@@ -1,0 +1,6 @@
+config/config.yaml
+storage/
+*.exe
+*.out
+.idea/
+.vscode/
